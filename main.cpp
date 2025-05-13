@@ -6,7 +6,7 @@
 #include "defGameEngine.hpp"
 
 #define WWCCAPI_IMPL
-#include "../Include/wwccapi.hpp"
+#include "wwccapi.hpp"
 
 class Example : public def::GameEngine
 {
@@ -16,7 +16,7 @@ public:
         GetWindow()->SetTitle("Testing webcam");
     }
 
-    Capturer c;
+    wwcc::Capturer c;
 
 protected:
     bool OnUserCreate() override
@@ -27,7 +27,7 @@ protected:
         std::wcout << L"Devices: " << std::endl;
 
         int i = 1;
-        for (const auto& name : Capturer::EnumerateDevices())
+        for (const auto& name : wwcc::Capturer::EnumerateDevices())
             std::wcout << i++ << L") " << name << std::endl;
 
         return true;
@@ -53,6 +53,6 @@ protected:
 int main()
 {
     Example test;
-    if (test.Construct(512, 480, 2, 2))
+    if (test.Construct(256, 240, 4, 4))
         test.Run();
 }
