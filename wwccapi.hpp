@@ -15,13 +15,22 @@
 #pragma comment(lib, "mfuuid.lib")
 #pragma comment(lib, "mfreadwrite.lib")
 
+enum class VideoFormat
+{
+    None,
+    Rgb32,
+    Rgb24,
+    Yuy2,
+    Nv12
+};
+
 class Capturer
 {
 public:
     Capturer() = default;
     ~Capturer();
 
-    bool Init(const DWORD nDevice, const uint32_t nWidth, const uint32_t nHeight);
+    bool Init(unsigned long nDevice, uint32_t nWidth, uint32_t nHeight, uint32_t nFpsNumerator, uint32_t nFpsDenominator = 1);
 
     static std::list<std::wstring> EnumerateDevices();
 
@@ -29,6 +38,9 @@ public:
 
     uint32_t GetFrameWidth() const;
     uint32_t GetFrameHeight() const;
+    uint32_t GetDeviceCount() const;
+
+    float GetFPS() const;
 
 private:
     bool CreateDevice(const DWORD nDevice);
@@ -40,6 +52,7 @@ private:
     DWORD m_dwStreamIndex = -1;
 
     IMFMediaSource* m_pDevice = nullptr;
+    uint32_t m_nDevices = 0;
 
     uint8_t* m_pFrame = nullptr;
     uint32_t* m_pOutput = nullptr;
@@ -49,6 +62,11 @@ private:
 
     uint32_t m_nFrameStrideYUY2 = 0;
     uint32_t m_nFrameStrideRGB32 = 0;
+
+    VideoFormat m_nVideoFormat = VideoFormat::None;
+
+    uint32_t m_nFpsNumerator = 0;
+    uint32_t m_nFpsDenominator = 0;
 
 };
 
@@ -70,8 +88,11 @@ Capturer::~Capturer()
     CoUninitialize();
 }
 
-bool Capturer::Init(const DWORD nDevice, const uint32_t nWidth, const uint32_t nHeight)
+bool Capturer::Init(unsigned long nDeviceID, uint32_t nWidth, uint32_t nHeight, uint32_t nFpsNumerator, uint32_t nFpsDenominator)
 {
+    m_nFpsNumerator = nFpsNumerator;
+    m_nFpsDenominator = nFpsDenominator;
+
     HRESULT hResult = CoInitialize(nullptr);
 
     if (FAILED(hResult))
@@ -82,7 +103,7 @@ bool Capturer::Init(const DWORD nDevice, const uint32_t nWidth, const uint32_t n
     if (FAILED(hResult))
         return false;
 
-    if (!CreateDevice(nDevice))
+    if (!CreateDevice(nDeviceID))
         return false;
 
     if (!ConfigureImage(nWidth, nHeight))
@@ -107,23 +128,21 @@ bool Capturer::CreateDevice(const DWORD nDeviceID)
     // Request video capture devices
     hResult = pConfig->SetGUID(
         MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
-        MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID
-    );
+        MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID);
 
     if (FAILED(hResult))
         return false;
 
-    UINT32 nDevices;
-    hResult = MFEnumDeviceSources(pConfig, &ppDevices, &nDevices);
+    hResult = MFEnumDeviceSources(pConfig, &ppDevices, &m_nDevices);
 
-    if (FAILED(hResult) || nDevices == 0)
+    if (FAILED(hResult) || m_nDevices == 0)
         return false;
 
     hResult = ppDevices[nDeviceID]->ActivateObject(IID_PPV_ARGS(&m_pDevice));
 
     if (SUCCEEDED(hResult))
     {
-        for (DWORD i = 0; i < nDevices; i++)
+        for (DWORD i = 0; i < m_nDevices; i++)
             ppDevices[i]->Release();
 
         CoTaskMemFree(ppDevices);
@@ -144,7 +163,6 @@ std::list<std::wstring> Capturer::EnumerateDevices()
     if (FAILED(hResult))
         return {};
 
-    // Request video capture devices
     hResult = pConfig->SetGUID(
         MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
         MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID
@@ -153,7 +171,7 @@ std::list<std::wstring> Capturer::EnumerateDevices()
     if (FAILED(hResult))
         return {};
 
-    UINT32 nDevices;
+    uint32_t nDevices;
     hResult = MFEnumDeviceSources(pConfig, &ppDevices, &nDevices);
 
     if (FAILED(hResult) || nDevices == 0)
@@ -165,7 +183,7 @@ std::list<std::wstring> Capturer::EnumerateDevices()
     {
         WCHAR* sName = nullptr;
 
-        UINT32 nLength;
+        uint32_t nLength;
         HRESULT hResult = ppDevices[i]->GetAllocatedString(
             MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
             &sName, &nLength);
@@ -198,6 +216,7 @@ bool Capturer::ConfigureImage(const uint32_t nWidth, const uint32_t nHeight)
 
     IMFMediaType* pNativeType = nullptr;
 
+    // TODO: Fix image size choosing
     while (SUCCEEDED(m_pReader->GetNativeMediaType(m_dwStreamIndex, nIndex, &pNativeType)))
     {
         uint32_t nFrameWidth, nFrameHeight;
@@ -270,6 +289,7 @@ bool Capturer::ConfigureDecoder()
 
     // TODO: Add an ability to change formats
     DIE_ON_FAIL(SUCCEEDED(pType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_YUY2)))
+    DIE_ON_FAIL(SUCCEEDED(MFSetAttributeRatio(pType, MF_MT_FRAME_RATE, m_nFpsNumerator, m_nFpsDenominator)))
     DIE_ON_FAIL(SUCCEEDED(m_pReader->SetCurrentMediaType(m_dwStreamIndex, nullptr, pType)))
 
 end:
@@ -391,6 +411,12 @@ end:
 
 uint32_t Capturer::GetFrameWidth() const { return m_nFrameWidth; }
 uint32_t Capturer::GetFrameHeight() const { return m_nFrameHeight; }
+uint32_t Capturer::GetDeviceCount() const { return m_nDevices; }
+
+float Capturer::GetFPS() const
+{
+    return (float)m_nFpsNumerator / (float)m_nFpsDenominator;
+}
 
 #endif
 
