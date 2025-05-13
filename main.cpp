@@ -3,11 +3,10 @@
 #include <list>
 #include <iostream>
 
-// https://github.com/defGameEngine/defGameEngine
 #include "defGameEngine.hpp"
 
 #define WWCCAPI_IMPL
-#include "wwccapi.hpp"
+#include "../Include/wwccapi.hpp"
 
 class Example : public def::GameEngine
 {
@@ -22,7 +21,7 @@ public:
 protected:
     bool OnUserCreate() override
     {
-        if (!c.Init(0, 256, 240))
+        if (!c.Init(0, GetWindow()->GetScreenWidth(), GetWindow()->GetScreenHeight(), 30))
             return false;
 
         std::wcout << L"Devices: " << std::endl;
@@ -54,6 +53,6 @@ protected:
 int main()
 {
     Example test;
-    if (test.Construct(256, 240, 4, 4))
+    if (test.Construct(512, 480, 2, 2))
         test.Run();
 }
