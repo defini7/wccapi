@@ -29,54 +29,13 @@ namespace wwcc
         Nv12
     };
 
-    uint8_t ClampInt32ToUint8(int nValue)
+    namespace internal
     {
-        if (nValue < 0) return 0;
-        if (nValue > 255) return 255;
-        return nValue;
-    }
+        uint8_t ClampInt32ToUint8(int nValue);
 
-    void ConvertFromRGB32(uint8_t* pSrc, uint8_t* pDst, uint32_t x)
-    {
-        pDst[x    ] = pSrc[0];
-        pDst[x + 1] = pSrc[1];
-        pDst[x + 2] = pSrc[2];
-        pDst[x + 3] = pSrc[3];
-    }
-
-    void ConvertFromRGB24(uint8_t* pSrc, uint8_t* pDst, uint32_t x)
-    {
-        pDst[x    ] = pSrc[0];
-        pDst[x + 1] = pSrc[1];
-        pDst[x + 2] = pSrc[2];
-        pDst[x + 3] = 255;
-    }
-
-    void ConvertFromYUY2(uint8_t* pSrc, uint8_t* pDst, uint32_t x)
-    {
-        auto yuv_to_rgb = [](int y, int u, int v, uint8_t* pBuffer)
-            {
-                int c = y - 16;
-                int d = u - 128;
-                int e = v - 128;
-
-                // |R|   |1.164 0.000  1.596  |   |y-16 |
-                // |G| = |1.164 -0.391 -0.813 | * |u-128|
-                // |B|   |1.164 2.018  0.000  |   |v-128|
-
-                pBuffer[0] = ClampInt32ToUint8((298 * c + 409 * e + 128) >> 8);
-                pBuffer[1] = ClampInt32ToUint8((298 * c - 100 * d - 208 * e + 128) >> 8);
-                pBuffer[2] = ClampInt32ToUint8((298 * c + 516 * d + 128) >> 8);
-                pBuffer[3] = 255;
-            };
-
-        uint8_t y0 = pSrc[0];
-        uint8_t u = pSrc[1];
-        uint8_t y1 = pSrc[2];
-        uint8_t v = pSrc[3];
-
-        yuv_to_rgb(y0, u, v, pDst + x * 4);
-        yuv_to_rgb(y1, u, v, pDst + x * 4 + 4);
+        void ConvertFromRGB32(uint8_t* pSrc, uint8_t* pDst, uint32_t x);
+        void ConvertFromRGB24(uint8_t* pSrc, uint8_t* pDst, uint32_t x);
+        void ConvertFromYUY2(uint8_t* pSrc, uint8_t* pDst, uint32_t x);
     }
 
     class Capturer
@@ -85,16 +44,22 @@ namespace wwcc
         Capturer() = default;
         ~Capturer();
 
-        // nDevice is an index of a device from the list of devices from EnumerateDevices method
+        // nDevice is an index of a device from the list of devices from EnumerateDevices method.
+        // FPS = (float)nFpsNumerator / (float)nFpsDenominator.
         bool Init(unsigned long nDevice, uint32_t nWidth, uint32_t nHeight, uint32_t nFpsNumerator, uint32_t nFpsDenominator = 1);
 
         static std::list<std::wstring> EnumerateDevices();
 
-        uint32_t* DoCapture();
+        void DoCapture();
 
         uint32_t GetFrameWidth() const;
         uint32_t GetFrameHeight() const;
         uint32_t GetDeviceCount() const;
+        
+        VideoFormat GetVideoFormat() const;
+
+        // pBuffer must be at least sizeof(uint32_t) * m_nDesiredWidth * m_nDesiredHeight in size
+        void SetBuffer(uint32_t* pBuffer);
 
     private:
         bool CreateDevice(const DWORD nDevice);
@@ -129,6 +94,56 @@ namespace wwcc
 
 #ifdef WWCCAPI_IMPL
 #undef WWCCAPI_IMPL
+
+    uint8_t internal::ClampInt32ToUint8(int nValue)
+    {
+        if (nValue < 0) return 0;
+        if (nValue > 255) return 255;
+        return nValue;
+    }
+
+    void internal::ConvertFromRGB32(uint8_t* pSrc, uint8_t* pDst, uint32_t x)
+    {
+        pDst[x] = pSrc[0];
+        pDst[x + 1] = pSrc[1];
+        pDst[x + 2] = pSrc[2];
+        pDst[x + 3] = pSrc[3];
+    }
+
+    void internal::ConvertFromRGB24(uint8_t* pSrc, uint8_t* pDst, uint32_t x)
+    {
+        pDst[x] = pSrc[0];
+        pDst[x + 1] = pSrc[1];
+        pDst[x + 2] = pSrc[2];
+        pDst[x + 3] = 255;
+    }
+
+    void internal::ConvertFromYUY2(uint8_t* pSrc, uint8_t* pDst, uint32_t x)
+    {
+        auto yuv_to_rgb = [](int y, int u, int v, uint8_t* pBuffer)
+            {
+                int c = y - 16;
+                int d = u - 128;
+                int e = v - 128;
+
+                // |R|   |1.164 0.000  1.596  |   |y-16 |
+                // |G| = |1.164 -0.391 -0.813 | * |u-128|
+                // |B|   |1.164 2.018  0.000  |   |v-128|
+
+                pBuffer[0] = ClampInt32ToUint8((298 * c + 409 * e + 128) >> 8);
+                pBuffer[1] = ClampInt32ToUint8((298 * c - 100 * d - 208 * e + 128) >> 8);
+                pBuffer[2] = ClampInt32ToUint8((298 * c + 516 * d + 128) >> 8);
+                pBuffer[3] = 255;
+            };
+
+        uint8_t y0 = pSrc[0];
+        uint8_t u = pSrc[1];
+        uint8_t y1 = pSrc[2];
+        uint8_t v = pSrc[3];
+
+        yuv_to_rgb(y0, u, v, pDst + x * 4);
+        yuv_to_rgb(y1, u, v, pDst + x * 4 + 4);
+    }
 
     Capturer::~Capturer()
     {
@@ -332,31 +347,23 @@ namespace wwcc
         // Check for a video
         DIE_IF(guid != MFMediaType_Video);
         DIE_IF(FAILED(pNativeType->GetGUID(MF_MT_SUBTYPE, &guid)));
+        
+    #define SET(fss, vf, fnc) { m_nFrameSourceStep = fss; m_nVideoFormat = vf; m_fnConvert = fnc; }
 
         if (guid == MFVideoFormat_RGB32)
-        {
-            m_nFrameSourceStep = 4;
-            m_nVideoFormat = VideoFormat::Rgb32;
-            m_fnConvert = ConvertFromRGB32;
-        }
+            SET(4, VideoFormat::Rgb32, internal::ConvertFromRGB32)
         else if (guid == MFVideoFormat_RGB24)
-        {
-            m_nFrameSourceStep = 3;
-            m_nVideoFormat = VideoFormat::Rgb24;
-            m_fnConvert = ConvertFromRGB24;
-        }
+            SET(3, VideoFormat::Rgb24, internal::ConvertFromRGB24)
         else if (guid == MFVideoFormat_YUY2)
-        {
-            m_nFrameSourceStep = 2;
-            m_nVideoFormat = VideoFormat::Yuy2;
-            m_fnConvert = ConvertFromYUY2;
-        }
+            SET(2, VideoFormat::Yuy2, internal::ConvertFromYUY2)
         else
         {
             // TODO: Support NV12
             bResult = false;
             goto end;
         }
+
+    #undef set
 
         DIE_IF(FAILED(pType->SetGUID(MF_MT_SUBTYPE, guid)));
 
@@ -369,10 +376,9 @@ namespace wwcc
         // Send everything to the reader
         DIE_IF(FAILED(m_pReader->SetCurrentMediaType(m_dwStreamIndex, nullptr, pType)));
 
+        // Allocate memory for the raw image
         m_nFrameSourceStride = m_nFrameWidth * m_nFrameSourceStep;
-
         m_pFrame = new uint8_t[m_nFrameStrideRGB32 * m_nFrameHeight];
-        m_pOutput = new uint32_t[m_nDesiredWidth * m_nDesiredHeight];
 
     end:
         pNativeType->Release();
@@ -385,7 +391,7 @@ namespace wwcc
 
 #define DIE_IF(fail) do { if (fail) goto end; } while (false)
 
-    uint32_t* Capturer::DoCapture()
+    void Capturer::DoCapture()
     {
         IMFSample* pSample = nullptr;
 
@@ -455,13 +461,15 @@ namespace wwcc
     end:
         if (pSample)
             pSample->Release();
-
-        return m_pOutput;
     }
 
     uint32_t Capturer::GetFrameWidth() const { return m_nFrameWidth; }
     uint32_t Capturer::GetFrameHeight() const { return m_nFrameHeight; }
     uint32_t Capturer::GetDeviceCount() const { return m_nDevices; }
+
+    VideoFormat Capturer::GetVideoFormat() const { return m_nVideoFormat; }
+
+    void Capturer::SetBuffer(uint32_t* pBuffer) { m_pOutput = pBuffer; }
 }
 
 #endif
