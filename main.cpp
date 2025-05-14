@@ -1,8 +1,3 @@
-#include <optional>
-#include <string>
-#include <list>
-#include <iostream>
-
 #include "defGameEngine.hpp"
 
 #define WWCCAPI_IMPL
@@ -16,26 +11,28 @@ public:
         GetWindow()->SetTitle("Testing webcam");
     }
 
-    wwcc::Capturer c;
+    wwcc::Capturer capturer;
 
 protected:
     bool OnUserCreate() override
     {
-        if (!c.Init(0, GetWindow()->GetScreenWidth(), GetWindow()->GetScreenHeight(), 30))
+        if (!capturer.Init(0, GetWindow()->GetScreenWidth(), GetWindow()->GetScreenHeight(), 30))
             return false;
 
         std::wcout << L"Devices: " << std::endl;
 
         int i = 1;
         for (const auto& name : wwcc::Capturer::EnumerateDevices())
-            std::wcout << i++ << L") " << name << std::endl;
+            std::wcout << i++ << L") " << name << '\n';
+
+        std::cout << "\nResolution: " << capturer.GetFrameWidth() << 'x' << capturer.GetFrameHeight() << std::endl;
 
         return true;
     }
 
     bool OnUserUpdate(float) override
     {
-        uint32_t* pBuffer = c.PerformCapture();
+        uint32_t* pBuffer = capturer.DoCapture();
         if (!pBuffer) return false;
 
         int width = GetWindow()->GetScreenWidth();
@@ -53,6 +50,6 @@ protected:
 int main()
 {
     Example test;
-    if (test.Construct(256, 240, 4, 4))
+    if (test.Construct(512, 480, 2, 2))
         test.Run();
 }
