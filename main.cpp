@@ -11,12 +11,21 @@ public:
         GetWindow()->SetTitle("Testing webcam");
     }
 
+    ~Example()
+    {
+        delete[] buffer;
+    }
+
     wwcc::Capturer capturer;
+    uint32_t* buffer = nullptr;
 
 protected:
     bool OnUserCreate() override
     {
-        if (!capturer.Init(0, GetWindow()->GetScreenWidth(), GetWindow()->GetScreenHeight(), 30))
+        int width = GetWindow()->GetScreenWidth();
+        int height = GetWindow()->GetScreenHeight();
+
+        if (!capturer.Init(0, width, height, 30))
             return false;
 
         std::wcout << L"Devices: " << std::endl;
@@ -27,20 +36,22 @@ protected:
 
         std::cout << "\nResolution: " << capturer.GetFrameWidth() << 'x' << capturer.GetFrameHeight() << std::endl;
 
+        buffer = new uint32_t[width * height];
+        capturer.SetBuffer(buffer);
+
         return true;
     }
 
     bool OnUserUpdate(float) override
     {
-        uint32_t* pBuffer = capturer.DoCapture();
-        if (!pBuffer) return false;
+        capturer.DoCapture();
 
         int width = GetWindow()->GetScreenWidth();
         int height = GetWindow()->GetScreenHeight();
 
         for (int y = 0; y < height; y++)
             for (int x = 0; x < width; x++)
-                Draw(x, y, def::Pixel(pBuffer[y * width + x]));
+                Draw(x, y, def::Pixel(buffer[y * width + x]));
 
         return true;
     }
