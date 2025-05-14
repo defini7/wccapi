@@ -3,6 +3,9 @@
 #ifndef WWCCAPI_HPP
 #define WWCCAPI_HPP
 
+#include <string>
+#include <list>
+
 #include <Windows.h>
 #include <mfapi.h>
 #include <mfidl.h>
@@ -26,23 +29,72 @@ namespace wwcc
         Nv12
     };
 
+    uint8_t ClampInt32ToUint8(int nValue)
+    {
+        if (nValue < 0) return 0;
+        if (nValue > 255) return 255;
+        return nValue;
+    }
+
+    void ConvertFromRGB32(uint8_t* pSrc, uint8_t* pDst, uint32_t x)
+    {
+        pDst[x    ] = pSrc[0];
+        pDst[x + 1] = pSrc[1];
+        pDst[x + 2] = pSrc[2];
+        pDst[x + 3] = pSrc[3];
+    }
+
+    void ConvertFromRGB24(uint8_t* pSrc, uint8_t* pDst, uint32_t x)
+    {
+        pDst[x    ] = pSrc[0];
+        pDst[x + 1] = pSrc[1];
+        pDst[x + 2] = pSrc[2];
+        pDst[x + 3] = 255;
+    }
+
+    void ConvertFromYUY2(uint8_t* pSrc, uint8_t* pDst, uint32_t x)
+    {
+        auto yuv_to_rgb = [](int y, int u, int v, uint8_t* pBuffer)
+            {
+                int c = y - 16;
+                int d = u - 128;
+                int e = v - 128;
+
+                // |R|   |1.164 0.000  1.596  |   |y-16 |
+                // |G| = |1.164 -0.391 -0.813 | * |u-128|
+                // |B|   |1.164 2.018  0.000  |   |v-128|
+
+                pBuffer[0] = ClampInt32ToUint8((298 * c + 409 * e + 128) >> 8);
+                pBuffer[1] = ClampInt32ToUint8((298 * c - 100 * d - 208 * e + 128) >> 8);
+                pBuffer[2] = ClampInt32ToUint8((298 * c + 516 * d + 128) >> 8);
+                pBuffer[3] = 255;
+            };
+
+        uint8_t y0 = pSrc[0];
+        uint8_t u = pSrc[1];
+        uint8_t y1 = pSrc[2];
+        uint8_t v = pSrc[3];
+
+        yuv_to_rgb(y0, u, v, pDst + x * 4);
+        yuv_to_rgb(y1, u, v, pDst + x * 4 + 4);
+    }
+
     class Capturer
     {
     public:
         Capturer() = default;
         ~Capturer();
 
+        // nDevice is an index of a device from the list of devices from EnumerateDevices method
         bool Init(unsigned long nDevice, uint32_t nWidth, uint32_t nHeight, uint32_t nFpsNumerator, uint32_t nFpsDenominator = 1);
 
         static std::list<std::wstring> EnumerateDevices();
 
-        uint32_t* PerformCapture();
+        uint32_t* DoCapture();
 
         uint32_t GetFrameWidth() const;
         uint32_t GetFrameHeight() const;
         uint32_t GetDeviceCount() const;
-
-        float GetFPS() const;
 
     private:
         bool CreateDevice(const DWORD nDevice);
@@ -62,13 +114,16 @@ namespace wwcc
         uint32_t m_nDesiredWidth = 0, m_nDesiredHeight = 0;
         uint32_t m_nFrameWidth = 0, m_nFrameHeight = 0;
 
-        uint32_t m_nFrameStrideYUY2 = 0;
+        uint32_t m_nFrameSourceStep = 0;
+        uint32_t m_nFrameSourceStride = 0;
         uint32_t m_nFrameStrideRGB32 = 0;
 
         VideoFormat m_nVideoFormat = VideoFormat::None;
 
         uint32_t m_nFpsNumerator = 0;
         uint32_t m_nFpsDenominator = 0;
+
+        void (*m_fnConvert)(uint8_t*, uint8_t*, uint32_t) = nullptr;
 
     };
 
@@ -185,10 +240,9 @@ namespace wwcc
         {
             WCHAR* sName = nullptr;
 
-            uint32_t nLength;
             HRESULT hResult = ppDevices[i]->GetAllocatedString(
                 MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
-                &sName, &nLength);
+                &sName, nullptr);
 
             if (SUCCEEDED(hResult) && sName)
             {
@@ -204,21 +258,19 @@ namespace wwcc
         return listDevices;
     }
 
-#define DIE_ON_FAIL(res) if (FAILED(res)) return false;
-
     bool Capturer::ConfigureImage(const uint32_t nWidth, const uint32_t nHeight)
     {
-        DIE_ON_FAIL(MFCreateSourceReaderFromMediaSource(m_pDevice, NULL, &m_pReader))
+        if (FAILED(MFCreateSourceReaderFromMediaSource(m_pDevice, nullptr, &m_pReader)))
+            return false;
 
-            m_nDesiredWidth = nWidth;
+        m_nDesiredWidth = nWidth;
         m_nDesiredHeight = nHeight;
 
         DWORD nIndex = 0;
-        uint32_t nBestError = -1;
+        uint32_t nBestError = -1; // std::numeric_limits<uint32_t>::max()
 
         IMFMediaType* pNativeType = nullptr;
 
-        // TODO: Fix image size choosing
         while (SUCCEEDED(m_pReader->GetNativeMediaType(m_dwStreamIndex, nIndex, &pNativeType)))
         {
             uint32_t nFrameWidth, nFrameHeight;
@@ -235,10 +287,10 @@ namespace wwcc
             // Pick one of the available sizes that's less than the desired size
             // and then choose the closest one
 
-            if (nWidth < nFrameWidth && nHeight < nFrameHeight)
+            if (nWidth <= nFrameWidth && nHeight <= nFrameHeight)
             {
-                int nWidthError = abs((int)nWidth - (int)nFrameWidth);
-                int nHeightError = abs((int)nHeight - (int)nFrameHeight);
+                int nWidthError = (int)nFrameWidth - (int)nWidth;
+                int nHeightError = (int)nFrameHeight - (int)nHeight;
 
                 if (nWidthError < nBestError && nFrameHeight < nBestError)
                 {
@@ -254,16 +306,12 @@ namespace wwcc
         if (m_nFrameWidth == 0 || m_nFrameHeight == 0)
             return false;
 
-        m_nFrameStrideYUY2 = m_nFrameWidth * 2;
         m_nFrameStrideRGB32 = m_nFrameWidth * 4;
-
-        m_pFrame = new uint8_t[m_nFrameStrideRGB32 * m_nFrameHeight];
-        m_pOutput = new uint32_t[m_nDesiredWidth * m_nDesiredHeight];
 
         return true;
     }
 
-#define DIE_ON_FAIL(res) if (!(res)) { bResult = false; goto end; }
+#define DIE_IF(fail) do { if (fail) { bResult = false; goto end; } } while (false)
 
     bool Capturer::ConfigureDecoder()
     {
@@ -274,39 +322,70 @@ namespace wwcc
 
         bool bResult = true;
         IMFMediaType* pType = nullptr;
-        GUID guidMajorType;
+        GUID guid;
 
         // Changing the default media type
+        DIE_IF(FAILED(pNativeType->GetGUID(MF_MT_MAJOR_TYPE, &guid)));
+        DIE_IF(FAILED(MFCreateMediaType(&pType)));
+        DIE_IF(FAILED(pType->SetGUID(MF_MT_MAJOR_TYPE, guid)));
 
-        DIE_ON_FAIL(SUCCEEDED(pNativeType->GetGUID(MF_MT_MAJOR_TYPE, &guidMajorType)))
-        DIE_ON_FAIL(SUCCEEDED(MFCreateMediaType(&pType)))
-        DIE_ON_FAIL(SUCCEEDED(pType->SetGUID(MF_MT_MAJOR_TYPE, guidMajorType)))
+        // Check for a video
+        DIE_IF(guid != MFMediaType_Video);
+        DIE_IF(FAILED(pNativeType->GetGUID(MF_MT_SUBTYPE, &guid)));
 
-        DIE_ON_FAIL(guidMajorType == MFMediaType_Video)
+        if (guid == MFVideoFormat_RGB32)
+        {
+            m_nFrameSourceStep = 4;
+            m_nVideoFormat = VideoFormat::Rgb32;
+            m_fnConvert = ConvertFromRGB32;
+        }
+        else if (guid == MFVideoFormat_RGB24)
+        {
+            m_nFrameSourceStep = 3;
+            m_nVideoFormat = VideoFormat::Rgb24;
+            m_fnConvert = ConvertFromRGB24;
+        }
+        else if (guid == MFVideoFormat_YUY2)
+        {
+            m_nFrameSourceStep = 2;
+            m_nVideoFormat = VideoFormat::Yuy2;
+            m_fnConvert = ConvertFromYUY2;
+        }
+        else
+        {
+            // TODO: Support NV12
+            bResult = false;
+            goto end;
+        }
 
-        /* MFVideoFormat_RGB32
-            MFVideoFormat_RGB24
-            MFVideoFormat_YUY2
-            MFVideoFormat_NV12 */
+        DIE_IF(FAILED(pType->SetGUID(MF_MT_SUBTYPE, guid)));
 
-        // TODO: Add an ability to change formats
-        DIE_ON_FAIL(SUCCEEDED(pType->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_YUY2)))
-        DIE_ON_FAIL(SUCCEEDED(MFSetAttributeRatio(pType, MF_MT_FRAME_RATE, m_nFpsNumerator, m_nFpsDenominator)))
-        DIE_ON_FAIL(SUCCEEDED(MFSetAttributeSize(pType, MF_MT_FRAME_SIZE, m_nFrameWidth, m_nFrameHeight)))
-        DIE_ON_FAIL(SUCCEEDED(m_pReader->SetCurrentMediaType(m_dwStreamIndex, nullptr, pType)))
+        // Set target fps
+        DIE_IF(FAILED(MFSetAttributeRatio(pType, MF_MT_FRAME_RATE, m_nFpsNumerator, m_nFpsDenominator)));
 
-        end:
+        // Set frame size
+        DIE_IF(FAILED(MFSetAttributeSize(pType, MF_MT_FRAME_SIZE, m_nFrameWidth, m_nFrameHeight)));
+
+        // Send everything to the reader
+        DIE_IF(FAILED(m_pReader->SetCurrentMediaType(m_dwStreamIndex, nullptr, pType)));
+
+        m_nFrameSourceStride = m_nFrameWidth * m_nFrameSourceStep;
+
+        m_pFrame = new uint8_t[m_nFrameStrideRGB32 * m_nFrameHeight];
+        m_pOutput = new uint32_t[m_nDesiredWidth * m_nDesiredHeight];
+
+    end:
         pNativeType->Release();
         pType->Release();
 
         return bResult;
     }
 
-#undef DIE_ON_FAIL
+#undef DIE_IF
 
-#define DIE_IF(res) if (res) goto end;
+#define DIE_IF(fail) do { if (fail) goto end; } while (false)
 
-    uint32_t* Capturer::PerformCapture()
+    uint32_t* Capturer::DoCapture()
     {
         IMFSample* pSample = nullptr;
 
@@ -316,29 +395,31 @@ namespace wwcc
 
             while (1)
             {
+                // Reading a sample in a sync mode
                 HRESULT hResult = m_pReader->ReadSample(
                     m_dwStreamIndex, 0, nullptr,
                     &nFlags, nullptr, &pSample
                 );
 
-                DIE_IF(FAILED(hResult))
+                DIE_IF(FAILED(hResult));
 
-                    if ((nFlags & MF_SOURCE_READERF_STREAMTICK) == 0 && pSample)
-                        break;
+                // Check if the sample is ready
+                if ((nFlags & MF_SOURCE_READERF_STREAMTICK) == 0 && pSample)
+                    break;
             }
 
-            DIE_IF(nFlags & MF_SOURCE_READERF_ENDOFSTREAM)
+            DIE_IF(nFlags & MF_SOURCE_READERF_ENDOFSTREAM);
 
             if (nFlags & MF_SOURCE_READERF_NATIVEMEDIATYPECHANGED)
             {
                 // The format has changed
-                DIE_IF(!ConfigureDecoder())
+                DIE_IF(!ConfigureDecoder());
             }
 
             IMFMediaBuffer* pBuffer = nullptr;
-            DIE_IF(!pSample || FAILED(pSample->ConvertToContiguousBuffer(&pBuffer)))
+            DIE_IF(!pSample || FAILED(pSample->ConvertToContiguousBuffer(&pBuffer)));
 
-                uint8_t* pData = nullptr;
+            uint8_t* pData = nullptr;
 
             if (FAILED(pBuffer->Lock(&pData, nullptr, nullptr)))
             {
@@ -346,50 +427,16 @@ namespace wwcc
                 goto end;
             }
 
-            // TODO: Add different formats
-            // now we convert: YUY2 -> RGB32
-
-            auto clamp = [](int value) -> uint8_t
-                {
-                    if (value < 0) return 0;
-                    if (value > 255) return 255;
-                    return value;
-                };
-
-            auto yuv_to_rgb = [&clamp](int y, int u, int v, uint8_t* pBuffer)
-                {
-                    int c = y - 16;
-                    int d = u - 128;
-                    int e = v - 128;
-
-                    // |R|   |1.164 0.000  1.596  |   |y-16 |
-                    // |G| = |1.164 -0.391 -0.813 | * |u-128|
-                    // |B|   |1.164 2.018  0.000  |   |v-128|
-
-                    // RGBA
-                    pBuffer[0] = clamp((298 * c + 409 * e + 128) >> 8);
-                    pBuffer[1] = clamp((298 * c - 100 * d - 208 * e + 128) >> 8);
-                    pBuffer[2] = clamp((298 * c + 516 * d + 128) >> 8);
-                    pBuffer[3] = 255;
-                };
-
             for (uint32_t y = 0; y < m_nFrameHeight; y++)
             {
-                uint8_t* pSrcRow = pData + y * m_nFrameStrideYUY2;
+                uint8_t* pSrcRow = pData + y * m_nFrameSourceStride;
                 uint8_t* pDstRow = m_pFrame + y * m_nFrameStrideRGB32;
 
-                for (uint32_t x = 0; x < m_nFrameWidth; x += 2)
-                {
-                    uint8_t y0 = pSrcRow[0];
-                    uint8_t u = pSrcRow[1];
-                    uint8_t y1 = pSrcRow[2];
-                    uint8_t v = pSrcRow[3];
-                    pSrcRow += 4;
-
-                    yuv_to_rgb(y0, u, v, pDstRow + x * 4);
-                    yuv_to_rgb(y1, u, v, pDstRow + x * 4 + 4);
-                }
+                for (uint32_t x = 0; x < m_nFrameWidth; x += m_nFrameSourceStep, pSrcRow += 4)
+                    m_fnConvert(pSrcRow, pDstRow, x);
             }
+
+            // Scaling down the image and storing each pixel as one uint32_t instead of four uint8_t
 
             uint32_t* pDst = m_pOutput;
             uint32_t* pSrc = reinterpret_cast<uint32_t*>(m_pFrame);
@@ -415,11 +462,6 @@ namespace wwcc
     uint32_t Capturer::GetFrameWidth() const { return m_nFrameWidth; }
     uint32_t Capturer::GetFrameHeight() const { return m_nFrameHeight; }
     uint32_t Capturer::GetDeviceCount() const { return m_nDevices; }
-
-    float Capturer::GetFPS() const
-    {
-        return (float)m_nFpsNumerator / (float)m_nFpsDenominator;
-    }
 }
 
 #endif
