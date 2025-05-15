@@ -1,5 +1,5 @@
 # WWCCAPI
-WWCCAPI - Windows WebCam Capturing API
+<p align="center"><img src="demo.png"></p>
 
 # Why?
 The idea was to bring a trivial API for capturing video from a webcam.
@@ -20,4 +20,4 @@ The idea was to bring a trivial API for capturing video from a webcam.
 - Allocate memory for your buffer of **uint32_t** (must be at least `(capture width) * (capture height) * sizeof(uint32_t)`)
 - Call **wwcc::Capturer::SetBuffer** providing your buffer
 - Call **wwcc::Capturer::DoCapture** to capture one frame (it stops current thread until done)
-- Each pixel is stored within a **uint32_t** value in *RGBA* format 
+- Each pixel is stored within a **uint32_t** value in *RGBA* format
