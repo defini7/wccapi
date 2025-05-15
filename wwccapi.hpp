@@ -1,4 +1,35 @@
-// WWCCAPI - Windows WebCam Capturing API
+/* GENERAL INFO
+
+    wwccapi.hpp
+    
+    +----------------------------------+
+    |             WWCCAPI              |
+    |   Windows WebCam Capturing API   |
+    +----------------------------------+
+    
+    
+    Distributed under GPL3 license
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+                    GNU GENERAL PUBLIC LICENSE
+                      Version 3, 29 June 2007
+     
+    Copyright (C) 2007 Free Software Foundation, Inc. <https://fsf.org/>
+    Everyone is permitted to copy and distribute verbatim copies
+    of this license document, but changing it is not allowed.
+    
+
+    Author
+    ~~~~~~
+
+    Alex, aka defini7, Copyright (C) 2025
+    
+*/
+
+/* VERSION HISTORY
+
+    0.01: Added support for RGB32, RGB24, YUY2 formats
+*/
 
 #ifndef WWCCAPI_HPP
 #define WWCCAPI_HPP
@@ -10,9 +41,8 @@
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
-#include <Mferror.h>
 
-// TODO: Wrap around with some macros
+// TODO: Wrap it with some macros
 #pragma comment(lib, "mf.lib")
 #pragma comment(lib, "mfplat.lib")
 #pragma comment(lib, "mfuuid.lib")
@@ -120,11 +150,11 @@ namespace wwcc
 
     void internal::ConvertFromYUY2(uint8_t* pSrc, uint8_t* pDst, uint32_t x)
     {
-        auto yuv_to_rgb = [](int y, int u, int v, uint8_t* pBuffer)
+        auto yuv_to_rgb = [](int y, int cb, int cr, uint8_t* pBuffer)
             {
                 int c = y - 16;
-                int d = u - 128;
-                int e = v - 128;
+                int d = cb - 128;
+                int e = cr - 128;
 
                 // |R|   |1.164 0.000  1.596  |   |y-16 |
                 // |G| = |1.164 -0.391 -0.813 | * |u-128|
@@ -137,18 +167,18 @@ namespace wwcc
             };
 
         uint8_t y0 = pSrc[0];
-        uint8_t u = pSrc[1];
+        uint8_t cb = pSrc[1];
         uint8_t y1 = pSrc[2];
-        uint8_t v = pSrc[3];
+        uint8_t cr = pSrc[3];
 
-        yuv_to_rgb(y0, u, v, pDst + x * 4);
-        yuv_to_rgb(y1, u, v, pDst + x * 4 + 4);
+        yuv_to_rgb(y0, cb, cr, pDst + x * 4);
+        yuv_to_rgb(y1, cb, cr, pDst + x * 4 + 4);
     }
 
     Capturer::~Capturer()
     {
-        if (!m_pFrame) delete[] m_pFrame;
-        if (!m_pOutput) delete[] m_pOutput;
+        if (!m_pFrame)
+            delete[] m_pFrame;
 
         if (m_pDevice)
         {
@@ -285,6 +315,10 @@ namespace wwcc
         uint32_t nBestError = -1; // std::numeric_limits<uint32_t>::max()
 
         IMFMediaType* pNativeType = nullptr;
+
+        // TODO: If it's guaranteed that all resolutions are sorted then
+        // we can peek the first one that's greater than the desired one
+        // and exit the loop instantly
 
         while (SUCCEEDED(m_pReader->GetNativeMediaType(m_dwStreamIndex, nIndex, &pNativeType)))
         {
