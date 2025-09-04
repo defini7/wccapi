@@ -3,8 +3,8 @@
     wwccapi.hpp
     
     +----------------------------------+
-    |             WWCCAPI              |
-    |   Windows WebCam Capturing API   |
+    |             WCCAPI               |
+    |       WebCam Capturing API       |
     +----------------------------------+
     
     
@@ -48,7 +48,7 @@
 #pragma comment(lib, "mfuuid.lib")
 #pragma comment(lib, "mfreadwrite.lib")
 
-namespace wwcc
+namespace wcc
 {
     enum class VideoFormat
     {
@@ -122,8 +122,8 @@ namespace wwcc
 
     };
 
-#ifdef WWCCAPI_IMPL
-#undef WWCCAPI_IMPL
+#ifdef WCCAPI_IMPL
+#undef WCCAPI_IMPL
 
     uint8_t internal::ClampInt32ToUint8(int nValue)
     {

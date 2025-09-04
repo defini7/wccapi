@@ -1,4 +1,4 @@
-# WWCCAPI
+# WCCAPI - WebCam Capturing API
 <p align="center"><img src="demo.png"></p>
 
 # Why?
@@ -12,7 +12,11 @@ The idea was to bring a trivial API for capturing video from a webcam.
 
 # Limitations
 - Everything is in a sync mode,
-- Only one device is supported at once.
+- Only one device is supported at once,
+- Works only on Windows.
+
+# Future
+- Add macOS support.
 
 # Usage
 - Create an instance of **wwcc::Capturer**

@@ -1,6 +1,6 @@
 #include "defGameEngine.hpp"
 
-#define WWCCAPI_IMPL
+#define WCCAPI_IMPL
 #include "wwccapi.hpp"
 
 class Example : public def::GameEngine
@@ -16,7 +16,7 @@ public:
         delete[] buffer;
     }
 
-    wwcc::Capturer capturer;
+    wcc::Capturer capturer;
     uint32_t* buffer = nullptr;
 
 protected:
@@ -31,7 +31,7 @@ protected:
         std::wcout << L"Devices: " << std::endl;
 
         int i = 1;
-        for (const auto& name : wwcc::Capturer::EnumerateDevices())
+        for (const auto& name : wcc::Capturer::EnumerateDevices())
             std::wcout << i++ << L") " << name << '\n';
 
         std::cout << "\nResolution: " << capturer.GetFrameWidth() << 'x' << capturer.GetFrameHeight() << std::endl;
