@@ -28,11 +28,16 @@
 
 /* VERSION HISTORY
 
-    0.01: Added support for RGB32, RGB24, YUY2 formats
+    0.01: Added support for RGB32, RGB24, YUY2 formats on Windows platform
+    0.02: Added support for macOS
 */
 
 #ifndef WWCCAPI_HPP
 #define WWCCAPI_HPP
+
+#ifndef _WIN32
+#error You can't use Windows version of WCCAPI
+#endif
 
 #include <string>
 #include <list>
@@ -48,15 +53,15 @@
 #pragma comment(lib, "mfuuid.lib")
 #pragma comment(lib, "mfreadwrite.lib")
 
-namespace wcc
+namespace wwcc
 {
     enum class VideoFormat
     {
         None,
         Rgb32,
-        Rgb24,
-        Yuy2,
-        Nv12
+        Rgb24, // Not needed on macOS
+        Yuy2, // Not needed on macOS
+        Nv12 // Not needed on macOS
     };
 
     namespace internal
@@ -92,7 +97,7 @@ namespace wcc
         void SetBuffer(uint32_t* pBuffer);
 
     private:
-        bool CreateDevice(const DWORD nDevice);
+        bool CreateDevice(const uint32_t nDevice);
         bool ConfigureImage(const uint32_t nWidth, const uint32_t nHeight);
         bool ConfigureDecoder();
 
@@ -122,8 +127,8 @@ namespace wcc
 
     };
 
-#ifdef WCCAPI_IMPL
-#undef WCCAPI_IMPL
+#ifdef WWCCAPI_IMPL
+#undef WWCCAPI_IMPL
 
     uint8_t internal::ClampInt32ToUint8(int nValue)
     {
