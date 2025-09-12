@@ -50,7 +50,7 @@ protected:
         else
             return false;
 
-        std::vector<std::wstring> devices = mwcc::EnumerateDevices();
+        std::list<std::wstring> devices = mwcc::EnumerateDevices();
         mwcc::SetBuffer(buffer);
 
         #elif defined(_WIN32)
@@ -58,7 +58,7 @@ protected:
         if (!capturer.Init(0, width, height, 30))
             return false;
 
-        std::vector<std::wstring> devices = wwcc::Capturer::EnumerateDevices();
+        std::list<std::wstring> devices = wwcc::Capturer::EnumerateDevices();
         capturer.SetBuffer(buffer);
 
         #endif

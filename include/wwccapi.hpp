@@ -222,7 +222,7 @@ namespace wwcc
         return true;
     }
 
-    bool Capturer::CreateDevice(const DWORD nDeviceID)
+    bool Capturer::CreateDevice(const uint32_t nDeviceID)
     {
         IMFAttributes* pConfig = nullptr;
         IMFActivate** ppDevices = nullptr;
